@@ -1,0 +1,7 @@
+{
+  "name": "SPARK — Station Planning, Allocation & Reservation Kiosk",
+  "description": "A comprehensive PC station reservation and monitoring system for Global Virtuoso employees across multiple office locations.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "Full name" },
+        "email": { "type": "string", "format": "email", "description": "Work email" },
+        "role": { "type": "string", "enum": ["User", "Manager", "IT Admin"], "description": "User role" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation date" }
+      },
+      "required": ["uid", "name", "email", "role", "createdAt"]
+    },
+    "Reservation": {
+      "title": "Reservation",
+      "description": "Office station reservation",
+      "type": "object",
+      "properties": {
+        "office": { "type": "string", "enum": ["Office #1", "Office #2"], "description": "Office location" },
+        "lobOrDepartment": { "type": "string", "description": "LOB or Department" },
+        "requestedBy": { "type": "string", "format": "email", "description": "Email of requester" },
+        "notifyEmail": { "type": "string", "format": "email", "description": "Email for notifications" },
+        "station": { "type": "integer", "description": "Station number" },
+        "date": { "type": "string", "format": "date", "description": "Reservation date (YYYY-MM-DD)" },
+        "start": { "type": "string", "description": "Start time" },
+        "end": { "type": "string", "description": "End time" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "rejected", "cancelled", "blocked", "overridden"], "description": "Reservation status" },
+        "type": { "type": "string", "enum": ["booking", "block"], "description": "Type of entry" },
+        "equipmentNeeds": { "type": "string", "description": "Optional equipment requests" },
+        "supervisorEmail": { "type": "string", "format": "email", "description": "Supervisor email" },
+        "managerEmail": { "type": "string", "format": "email", "description": "Manager email" },
+        "rejectionReason": { "type": "string", "description": "Reason if rejected" },
+        "approvedBy": { "type": "string", "description": "Admin who approved" },
+        "approvedAt": { "type": "string", "format": "date-time", "description": "Approval timestamp" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["office", "employeeId", "requestedBy", "station", "date", "start", "end", "status", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "/reservations/{reservationId}": {
+      "schema": "Reservation",
+      "description": "Reservations collection"
+    }
+  }
+}

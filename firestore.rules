@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required) - Firebase Auth UID
+    //   - name: string (required, < 100 chars) - Full name
+    //   - email: string (required, email format) - Work email
+    //   - role: string (required, enum: User, Manager, IT Admin) - User role
+    //   - createdAt: timestamp (required) - Account creation date
+    //
+    // Collection: reservations
+    // Document ID: {reservationId} (Auto-generated)
+    // Fields:
+    //   - office: string (required, enum: Office #1, Office #2) - Office location
+    //   - lobOrDepartment: string (required, < 50 chars) - LOB or Department
+    //   - requestedBy: string (required, email format) - Email of requester
+    //   - notifyEmail: string (optional, email format) - Email for notifications
+    //   - station: number (required, 1-100) - Station number
+    //   - date: string (required, YYYY-MM-DD) - Reservation date
+    //   - start: string (required, HH:MM) - Start time
+    //   - end: string (required, HH:MM) - End time
+    //   - status: string (required, enum: pending, confirmed, rejected, cancelled, blocked) - Status
+    //   - type: string (required, enum: booking, block) - Type of entry
+    //   - equipmentNeeds: string (optional, < 500 chars) - Optional equipment requests
+    //   - rejectionReason: string (optional, < 500 chars) - Reason if rejected
+    //   - approvedBy: string (optional, email format) - Admin who approved
+    //   - approvedAt: timestamp (optional) - Approval timestamp
+    //   - createdAt: timestamp (required) - Creation timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['IT Admin', 'Manager'] ||
+          (request.auth.token.email in ["jaxx.pablo@gmail.com", "admin.dev@globalvirtuoso.com"]));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    function isValidTimeString(timeStr) {
+      return timeStr is string && timeStr.matches("^\\d{2}:\\d{2}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role', 'createdAt']) &&
+             data.keys().hasOnly(['uid', 'name', 'email', 'role', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.role in ['User', 'Manager', 'IT Admin'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidReservation(data) {
+      return data.keys().hasAll(['office', 'lobOrDepartment', 'requestedBy', 'station', 'date', 'start', 'end', 'status', 'type', 'createdAt']) &&
+             data.office in ['Office #1', 'Office #2'] &&
+             data.lobOrDepartment is string && data.lobOrDepartment.size() > 0 && data.lobOrDepartment.size() < 50 &&
+             isValidEmail(data.requestedBy) &&
+             data.station is number && data.station >= 1 && data.station <= 100 &&
+             isValidDateString(data.date) &&
+             isValidTimeString(data.start) &&
+             isValidTimeString(data.end) &&
+             data.status in ['pending', 'confirmed', 'rejected', 'cancelled', 'blocked', 'overridden'] &&
+             data.type in ['booking', 'block'] &&
+             data.createdAt is timestamp &&
+             (!('notifyEmail' in data) || data.notifyEmail == null || isValidEmail(data.notifyEmail)) &&
+             (!('supervisorEmail' in data) || data.supervisorEmail == null || isValidEmail(data.supervisorEmail)) &&
+             (!('managerEmail' in data) || data.managerEmail == null || isValidEmail(data.managerEmail)) &&
+             (!('equipmentNeeds' in data) || data.equipmentNeeds == null || (data.equipmentNeeds is string && data.equipmentNeeds.size() < 500)) &&
+             (!('rejectionReason' in data) || data.rejectionReason == null || (data.rejectionReason is string && data.rejectionReason.size() < 500)) &&
+             (!('approvedBy' in data) || data.approvedBy == null || isValidEmail(data.approvedBy)) &&
+             (!('approvedAt' in data) || data.approvedAt == null || data.approvedAt is timestamp) &&
+             (!('cancelledBy' in data) || data.cancelledBy == null || data.cancelledBy is string) &&
+             (!('cancelledAt' in data) || data.cancelledAt == null || data.cancelledAt is timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      (request.resource.data.role == 'User' || isAdmin());
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || isAdmin();
+    }
+
+    match /employees/{employeeId} {
+      allow read: if true;   // needed for token-based login lookup
+      allow create: if true; // admin-enforced at app level
+      allow update: if true; // admin-enforced at app level
+      allow delete: if false;
+    }
+
+    match /reservations/{reservationId} {
+      // v3: auth is token-based (no Firebase Auth); security enforced at app level
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+  }
+}
