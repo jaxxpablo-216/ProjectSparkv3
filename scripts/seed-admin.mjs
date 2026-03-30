@@ -1,14 +1,10 @@
 // One-time bootstrap script — creates first Admin employee with a token
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { createRequire } from 'module';
 
-const firebaseConfig = {
-  projectId: "gen-lang-client-0832796952",
-  appId: "1:726645544810:web:2c9d310e90436a1224f713",
-  apiKey: "AIzaSyAeiwBE7Fd4hdqIpUkxyGx9MxCAsYF-WV8",
-  authDomain: "gen-lang-client-0832796952.firebaseapp.com",
-  firestoreDatabaseId: "ai-studio-185ac016-c683-4029-9677-bf7ab0064674",
-};
+const require = createRequire(import.meta.url);
+const firebaseConfig = require('../firebase-applet-config.json');
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);

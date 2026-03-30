@@ -4,6 +4,7 @@
     "rules": "firestore.rules"
   },
   "hosting": {
+    "site": "sparkv3",
     "public": "dist",
     "ignore": [
       "firebase.json",

@@ -1,0 +1,189 @@
+# Project SPARK v3 - Portability and Production Enablement
+
+## 1. Package Export (ZIP)
+
+Created package in parent folder:
+
+- `ProjectSparkv3-full-package.zip` (excluding `.firebase` runtime lock files)
+
+This ZIP contains the complete application source code, config, and assets required for build and deployment.
+
+---
+
+## 2. Project Overview
+
+- Name: SPARK — Station Planning, Allocation & Reservation Kiosk
+- Stack: React 19 + TypeScript + Vite
+- UI: Tailwind CSS, Lucide icons, Sonner toast
+- Backend: Firebase Auth + Firestore
+- Deployment: Firebase Hosting
+
+### Core concepts
+
+- Office station reservation, approval workflow, conflict management.
+- Role-based UI (User / Manager / IT Admin), interactive calendar and grid.
+- Multi-view dashboards: day/week/month/all.
+
+---
+
+## 3. Folder structure
+
+- `src/App.tsx`: router and page bindings
+- `src/firebase.ts`: Firebase initialization
+- `src/index.css`: global styles
+- `src/main.tsx`: React DOM bootstrapping
+- `src/pages/`:
+  - `Login.tsx`
+  - `Dashboard.tsx` (main prototype app page)
+  - `Admin.tsx`
+  - `Profile.tsx`
+- `src/components/`:
+  - `Layout.tsx`
+  - `CalendarView.tsx`
+  - `StationGrid.tsx`
+  - `ReservationForm.tsx`
+  - `ReservationProvider.tsx`
+  - `UserProvider.tsx`
+  - `ApprovalSection.tsx`, `RejectionModal.tsx`, `ConflictModal.tsx`, `BlockModal.tsx`, `ErrorBoundary.tsx`, `HelpModal.tsx`, `DashboardStats.tsx`, `UserManagement.tsx`
+- `src/lib/`: utilities and business logic
+  - `calendar-generator.ts`
+  - `firebase-utils.ts`
+  - `pdf-generator.ts`
+  - `tokenUtils.ts`
+  - `utils.ts`
+  - `validation.ts`
+
+---
+
+## 4. Firebase config (deployment)
+
+### `firebase-applet-config.json`
+
+- `firestoreDatabaseId`: `ai-studio-185ac016-c683-4029-9677-bf7ab0064674`
+- See file for full SDK config (projectId, appId, apiKey, authDomain, storageBucket)
+
+### `firebase.json`
+
+- Hosting public folder: `dist`
+- Hosting site: `sparkv3`
+- SPA rewrite: all routes -> `/index.html`
+
+### Production URL
+
+- `https://sparkv3.web.app/`
+
+---
+
+## 5. Routing (App.tsx)
+
+- `/` → `Login`
+- `/dashboard` → `Dashboard`
+- `/admin` → `Admin`
+- `/profile` → `Profile`
+- `*` → redirect to `/`
+
+### Usage flow
+
+1. User logs in with Employee ID + Token (no Google/email auth).
+2. Token is validated against the `employees` Firestore collection — checked for match, active status, and expiry.
+3. Role is resolved from the employee document (`role` field); session persisted in `localStorage`.
+4. Users get station booking UI (grid + calendar), create reservation request.
+5. Managers/Admins see pending/in-progress requests and approve/reject.
+6. Reservation status changes propagate in Firestore, realtime with React state hooks.
+
+---
+
+## 6. Data model (Firestore)
+
+### User document (collection `/users/{uid}`)
+
+- `uid`, `name`, `email`, `role`, `createdAt`, etc.
+
+### Reservation document (collection `/reservations/{id}`)
+
+- `office`, `lobOrDepartment`, `requestedBy`, `notifyEmail`
+- `station`, `date`, `start`, `end`, `status`, `type`, `equipmentNeeds`
+- Approval fields: `approvedBy`, `approvedAt`, `rejectionReason`, `createdAt`
+- Types: `pending`, `confirmed`, `rejected`, `cancelled`, `blocked`, `overridden`, plus `type` = `booking|block`
+
+---
+
+## 7. Reusable architecture + design patterns for similar apps
+
+### a) Feature modules (page+provider)
+
+- `ReservationProvider` handles reservation business logic and state.
+- `UserProvider` handles auth-based role selection and access filtering.
+- Dashboard page + components clearly separated into grid, modal dialogs, stats.
+
+### b) Common UI patterns
+
+- SPA routing with React Router and a single `Layout` wrapper.
+- Modal flows for confirm/reject and conflict handling.
+- Calendar-based views generated with utility `calendar-generator.ts`.
+- `StationGrid` component with statuses and action callbacks.
+- Reusable table and list patterns (`DashboardStats`, `UserManagement`, etc.).
+
+### c) Data / action de-coupling
+
+- `firebase-utils.ts` is core data adapter: CRUD operations, realtime queries.
+- Validation logic in `validation.ts` for input rules.
+- Normalized model in `types.ts` (TypeScript type safety).
+
+### d) How to apply to new domains
+
+- Replace `Reservation` domain values with appropriate scope (referral + tickets + reviews).
+- Keep `ReservationProvider`/`UserProvider` pattern for state + role gating.
+- Keep event lifecycle states (pending/approved/rejected) for workflows like referral approval, ticket triage, performance review.
+- Keep calendar grid + status colors for allocations, due dates, review cycles.
+
+---
+
+## 8. Production deployment steps
+
+1. Install dependencies:
+   - `npm install`
+2. Build app:
+   - `npm run build`
+3. Initialize Firebase (only once):
+   - `firebase login`
+   - `firebase use default` (project is pre-configured in `.firebaserc`)
+4. Deploy to hosting:
+   - `firebase deploy --only hosting`
+
+### Optional: preview channel
+
+- `firebase hosting:channel:deploy staging --expires 7d`
+- preview link is generated by Firebase CLI.
+
+---
+
+## 9. Deliverables in this workspace
+
+- `ProjectSparkv3-full-package.zip` (zipped source for transfer)
+- `PROJECTSPARKv3-PORTABILITY-AND-DESIGN.md` (this file)
+
+---
+
+## 10. Expansion guidance for next apps
+
+### Template for new app projects
+
+1. Copy repository folder.
+2. Rename domain objects: `Reservation` → e.g. `Referral`, `Ticket`, `Review`
+3. Keep:
+   - `User` model and role enums
+   - provider pattern (real-time loan from Firestore)
+   - list+status view + approve/reject modals
+4. Add domain-specific fields:
+   - Referral: referral source, candidate details, status stages
+   - Ticket: severity, assignee, SLA target, resolution notes
+   - PIP/NTE: performance metrics, coaching goals, deadlines
+5. Keep UI skeleton type definitions, keep `CalendarView` for timeline calendars.
+
+---
+
+## 11. Notes
+
+- The project already fully supports Firebase with straightforward domain logic.
+- This MD is designed for handoff and to make branching to similar applications fast.

@@ -1,7 +1,8 @@
 // Bootstrap first Admin via Firestore REST API (no auth required with open rules)
-const PROJECT_ID = 'gen-lang-client-0832796952';
-const DATABASE_ID = 'ai-studio-185ac016-c683-4029-9677-bf7ab0064674';
-const API_KEY = 'AIzaSyAeiwBE7Fd4hdqIpUkxyGx9MxCAsYF-WV8';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { projectId: PROJECT_ID, firestoreDatabaseId: DATABASE_ID, apiKey: API_KEY } = require('../firebase-applet-config.json');
 
 const BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
 
