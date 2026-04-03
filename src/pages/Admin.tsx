@@ -418,16 +418,19 @@ export default function Admin() {
         ].map((o, i) => (
           <div key={i} className={cn('p-6 rounded-3xl border-2 shadow-sm bg-white',
             o.color === 'blue' ? 'border-blue-100' : 'border-purple-100')}>
-            <h3 className={cn('text-lg font-black uppercase tracking-tight mb-4',
+            <h3 className={cn('text-sm font-black uppercase tracking-tight mb-4',
               o.color === 'blue' ? 'text-blue-600' : 'text-purple-600')}>{o.name}</h3>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
               {[
-                { label: 'Pending',   value: o.s.pending },
-                { label: 'Confirmed', value: o.s.confirmed },
-                { label: 'Rejected',  value: o.s.rejected },
+                { label: 'Pending',   value: o.s.pending,   dot: 'bg-amber-400' },
+                { label: 'Confirmed', value: o.s.confirmed, dot: 'bg-green-600' },
+                { label: 'Rejected',  value: o.s.rejected,  dot: 'bg-red-500'   },
               ].map((s, j) => (
-                <div key={j} className="text-center">
-                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">{s.label}</p>
+                <div key={j} className="flex items-center justify-between py-1.5 border-b border-slate-50 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('w-2 h-2 rounded-full shrink-0', s.dot)} />
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{s.label}</p>
+                  </div>
                   <p className="text-xl font-black text-slate-900">{s.value}</p>
                 </div>
               ))}

@@ -128,5 +128,11 @@ service cloud.firestore {
       allow update: if true;
       allow delete: if true;
     }
+
+    match /settings/{docId} {
+      // Critical Notice and global config — read by all, write admin-enforced at app level
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }
