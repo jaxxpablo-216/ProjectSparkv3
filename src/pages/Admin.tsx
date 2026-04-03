@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { Check, X, Trash2, Download, Lock, Clock, Building2, Loader2, Activity, CheckCircle, XCircle, Ban, ShieldOff } from 'lucide-react';
+import { Check, X, Trash2, Download, Lock, Clock, Building2, Loader2, Activity, CheckCircle, XCircle, Ban, ShieldOff, Megaphone, AlertTriangle, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useReservations } from '../components/ReservationProvider';
 import { useEmployee } from '../components/UserProvider';
 import ReservationForm from '../components/ReservationForm';
@@ -11,6 +13,7 @@ import CalendarView from '../components/CalendarView';
 import RejectionModal from '../components/RejectionModal';
 import BlockModal from '../components/BlockModal';
 import UserManagement from '../components/UserManagement';
+import { CriticalNotice } from '../types';
 
 export default function Admin() {
   const { searchQuery } = useOutletContext<{ searchQuery: string }>();
@@ -24,6 +27,43 @@ export default function Admin() {
   const [rejectionModal, setRejectionModal] = useState<{ id: string } | null>(null);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [actionLoading,  setActionLoading]  = useState<string | null>(null);
+  // Critical Notice management (Admin only)
+  const [noticeText,     setNoticeText]     = useState('');
+  const [noticeType,     setNoticeType]     = useState<CriticalNotice['type']>('warning');
+  const [noticeSaving,   setNoticeSaving]   = useState(false);
+
+  const handlePublishNotice = async () => {
+    if (!noticeText.trim()) { toast.error('Enter a notice message'); return; }
+    setNoticeSaving(true);
+    try {
+      await setDoc(doc(db, 'settings', 'global'), {
+        criticalNotice: {
+          active: true,
+          message: noticeText.trim(),
+          type: noticeType,
+          setBy: employee?.employeeId,
+          setAt: new Date().toISOString(),
+        }
+      }, { merge: true });
+      toast.success('Notice published — visible to all users');
+      setNoticeText('');
+    } catch {
+      toast.error('Failed to publish notice');
+    } finally {
+      setNoticeSaving(false);
+    }
+  };
+
+  const handleClearNotice = async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'global'), {
+        criticalNotice: { active: false }
+      }, { merge: true });
+      toast.success('Notice cleared');
+    } catch {
+      toast.error('Failed to clear notice');
+    }
+  };
 
   // ── Stats ──────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -406,6 +446,58 @@ export default function Admin() {
           <Download className="w-4 h-4" /> Export CSV
         </button>
       </div>
+
+      {/* Critical Notice Management — Admin only */}
+      {employee?.role === 'Admin' && (
+        <div className="p-5 bg-red-50 rounded-2xl border border-red-100 space-y-3">
+          <div className="flex items-center gap-2">
+            <Megaphone className="w-4 h-4 text-red-600" />
+            <span className="text-xs font-black uppercase tracking-widest text-red-600">System-Wide Notice</span>
+          </div>
+          <div className="flex gap-2">
+            {(['info', 'warning', 'critical'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setNoticeType(t)}
+                className={cn(
+                  'flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border',
+                  noticeType === t
+                    ? t === 'critical' ? 'bg-red-600 text-white border-red-600'
+                      : t === 'warning' ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                )}
+              >
+                {t === 'critical' ? <AlertTriangle className="w-3 h-3" /> : t === 'warning' ? <Megaphone className="w-3 h-3" /> : <Info className="w-3 h-3" />}
+                {t}
+              </button>
+            ))}
+          </div>
+          <textarea
+            rows={2}
+            placeholder="Type your notice message here…"
+            className="w-full px-3 py-2.5 bg-white border-2 border-red-100 rounded-xl focus:border-red-400 focus:ring-2 focus:ring-red-100 outline-none text-sm font-medium resize-none"
+            value={noticeText}
+            onChange={(e) => setNoticeText(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handlePublishNotice}
+              disabled={noticeSaving}
+              className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+            >
+              {noticeSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Megaphone className="w-3 h-3" />}
+              Publish Notice
+            </button>
+            <button
+              onClick={handleClearNotice}
+              className="px-4 py-2.5 bg-white border-2 border-red-100 hover:border-red-300 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 

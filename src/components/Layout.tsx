@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, Link } from 'react-router-dom';
-import { Zap, LogOut, User, Search as SearchIcon, Shield, X, GripHorizontal } from 'lucide-react';
+import { Zap, LogOut, User, Search as SearchIcon, Shield, X, GripHorizontal, AlertTriangle, Info, Megaphone } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '../lib/utils';
 import { useEmployee } from './UserProvider';
@@ -7,6 +7,9 @@ import { useReservations } from './ReservationProvider';
 import { countdownLabel, tokenBadgeClass } from '../lib/tokenUtils';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { CriticalNotice } from '../types';
 
 // ── Draggable Search Results Popup ───────────────────────────────────────────
 
@@ -169,6 +172,22 @@ export default function Layout() {
   const [viewMode, setViewMode] = useState<'User' | 'Admin'>('User');
   const [, setTick] = useState(0); // forces re-render for live countdown
   const defaultSet = useRef(false);
+  const [notice, setNotice] = useState<CriticalNotice | null>(null);
+
+  // Real-time listener for Critical Notice
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.criticalNotice?.active) {
+          setNotice(data.criticalNotice as CriticalNotice);
+        } else {
+          setNotice(null);
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Re-render every minute so the countdown stays live
   useEffect(() => {
@@ -230,7 +249,7 @@ export default function Layout() {
             </div>
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">SPARK</h1>
-              <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider mt-0.5">v3.0 Beta · Station Planning & Reservation Kiosk</p>
+              <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider mt-0.5">v3.5 · Station Planning & Reservation Kiosk</p>
             </div>
           </Link>
 
@@ -290,17 +309,18 @@ export default function Layout() {
               )}
               <span className={cn(
                 'text-[9px] font-black uppercase tracking-widest',
-                employee.role === 'Admin' ? 'text-red-600' :
-                employee.role === 'Manager' ? 'text-purple-600' :
+                employee.role === 'Admin'             ? 'text-red-600' :
+                employee.role === 'Manager'           ? 'text-purple-600' :
                 employee.role === 'Assistant Manager' ? 'text-blue-600' :
-                'text-amber-600'
+                employee.role === 'User'              ? 'text-teal-600' :
+                                                        'text-amber-600'
               )}>
                 {employee.role}
               </span>
             </div>
 
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-full">
-              {employee.role !== 'Supervisor' && (
+              {(employee.role === 'Admin' || employee.role === 'Manager' || employee.role === 'Assistant Manager') && (
                 <Link
                   to="/admin"
                   className={cn(
@@ -333,6 +353,26 @@ export default function Layout() {
           </div>
         </div>
       </header>
+
+      {/* Critical Notice Banner */}
+      {notice && (
+        <div className={cn(
+          'w-full px-4 py-3 flex items-center gap-3',
+          notice.type === 'critical' ? 'bg-red-600 text-white' :
+          notice.type === 'warning'  ? 'bg-amber-500 text-white' :
+                                       'bg-blue-600 text-white'
+        )}>
+          <div className="max-w-7xl mx-auto w-full flex items-center gap-3">
+            {notice.type === 'critical' ? <AlertTriangle className="w-4 h-4 shrink-0" /> :
+             notice.type === 'warning'  ? <Megaphone className="w-4 h-4 shrink-0" /> :
+                                          <Info className="w-4 h-4 shrink-0" />}
+            <p className="text-sm font-bold flex-1">{notice.message}</p>
+            <span className="text-[10px] font-black uppercase tracking-widest opacity-70 shrink-0">
+              {notice.type === 'critical' ? 'Critical Notice' : notice.type === 'warning' ? 'System Notice' : 'Info'}
+            </span>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6">
         <Outlet context={{ searchQuery, viewMode }} />

@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { cn } from '../lib/utils';
-import { OFFICES, Reservation, ReservationStatus, ReservationType } from '../types';
+import { OFFICES, Reservation, ReservationStatus, ReservationType, isLCStation, getLCStations } from '../types';
 import { useReservations } from './ReservationProvider';
 import { useEmployee } from './UserProvider';
-import { format, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, addDays, addMonths, subMonths, addWeeks, subWeeks } from 'date-fns';
-import { X, Lock, Unlock, Download, User as UserIcon, Calendar, Clock, Briefcase, Wrench, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, addDays, addMonths, subMonths, addWeeks, subWeeks, parseISO } from 'date-fns';
+import { X, Lock, Unlock, Download, User as UserIcon, Calendar, Clock, Briefcase, Wrench, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import ReservationForm from './ReservationForm';
+import AdminEditModal from './AdminEditModal';
 
 interface StationGridProps {
   selectedOffice: 'Office #1' | 'Office #2';
@@ -30,6 +31,13 @@ export default function StationGrid({
 
   // Unified selection: each cell is {station, date}
   const [selectedCells, setSelectedCells] = useState<Array<{station: number|string, date: string}>>([]);
+  // Sortable All-view columns
+  const [sortCol, setSortCol] = useState<'date' | 'station' | 'lobOrDepartment' | 'requestedBy' | 'status'>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const toggleSort = (col: typeof sortCol) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
   // Legacy alias used by admin block/unblock (daily view only)
   const selectedStations = selectedCells.filter(c => c.date === selectedDate).map(c => c.station);
 
@@ -38,6 +46,7 @@ export default function StationGrid({
   const [activeBookingCell, setActiveBookingCell] = useState<{station: number|string, date: string} | null>(null);
   const [bulkBookingCells, setBulkBookingCells] = useState<Array<{station: number|string, date: string}>>([]);
   const [infoModal, setInfoModal] = useState<Reservation | null>(null);
+  const [editModal, setEditModal] = useState<Reservation | null>(null);
 
   const officeConfig = OFFICES.find(o => o.name === selectedOffice)!;
 
@@ -54,28 +63,35 @@ export default function StationGrid({
     return { confirmed, pending, blocked, total: dayRes.length };
   };
 
-  const getStationStatus = (station: number | string, date: string = selectedDate) => {
-    const res = reservations.find(r => 
-      r.office === selectedOffice && 
-      r.station === station && 
+  const getStationStatus = (station: number | string, date: string = selectedDate): ReservationStatus | 'available' | 'lc' => {
+    const res = reservations.find(r =>
+      r.office === selectedOffice &&
+      r.station === station &&
       r.date === date &&
       r.status !== 'rejected' &&
       r.status !== 'cancelled'
     );
 
-    if (!res) return 'available';
+    if (!res) {
+      // Unbooked LC station — show as LC Reserved
+      if (isLCStation(station, selectedOffice)) return 'lc';
+      return 'available';
+    }
     return res.status;
   };
 
-  const getStatusColor = (status: ReservationStatus | 'available') => {
+  const getStatusColor = (status: ReservationStatus | 'available' | 'lc') => {
     switch (status) {
-      case 'available': return 'bg-emerald-500 hover:bg-emerald-600';
-      case 'pending': return 'bg-amber-400 hover:bg-amber-500';
-      case 'confirmed': return 'bg-rose-500 hover:bg-rose-600';
-      case 'blocked': return 'bg-slate-400 hover:bg-slate-500';
+      case 'available':   return 'bg-blue-500 hover:bg-blue-600';
+      case 'pending':     return 'bg-amber-400 hover:bg-amber-500';
+      case 'confirmed':   return 'bg-green-600 hover:bg-green-700';
+      case 'rejected':    return 'bg-red-600 hover:bg-red-700';
+      case 'cancelled':   return 'bg-slate-300 hover:bg-slate-400';
+      case 'blocked':     return 'bg-slate-400 hover:bg-slate-500';
       case 'overridden':
-      case 'reallocated': return 'bg-blue-500 hover:bg-blue-600';
-      default: return 'bg-emerald-500';
+      case 'reallocated': return 'bg-indigo-500 hover:bg-indigo-600';
+      case 'lc':          return 'bg-violet-600 hover:bg-violet-700';
+      default:            return 'bg-blue-500';
     }
   };
 
@@ -107,15 +123,18 @@ export default function StationGrid({
     setSelectedCells([]);
   };
 
+  const isReadOnly = employee?.role === 'User';
+
   const handleStationClick = (station: number | string, e: React.MouseEvent, date: string = selectedDate) => {
-    // CTRL / CMD — multi-select toggle
+    // CTRL / CMD — multi-select toggle (read-only users can't select for booking)
     if (e.ctrlKey || e.metaKey) {
+      if (isReadOnly) return;
       e.preventDefault();
       toggleCell(station, date);
       return;
     }
 
-    // Single click — clear multi-select, open appropriate modal
+    // Single click — clear multi-select, then route
     setSelectedCells([{ station, date }]);
     setSelectedDate(date);
 
@@ -128,20 +147,24 @@ export default function StationGrid({
     );
 
     if (!res) {
+      // Read-only users (User role) cannot book
+      if (isReadOnly) return;
+      // LC station — only Admin/Manager can book
+      if (isLCStation(station, selectedOffice)) {
+        const isAdminOrManager = employee?.role === 'Admin' || employee?.role === 'Manager' || employee?.role === 'Assistant Manager';
+        if (!isAdminOrManager) {
+          toast.error('This station is reserved for the Load Control (LC) team.');
+          return;
+        }
+      }
+      // Empty slot → booking form
       setActiveBookingCell({ station, date });
       setBulkBookingCells([]);
       setIsBookingModalOpen(true);
       return;
     }
 
-    const isOwner = res.requestedBy === employee?.employeeId;
-    if (isOwner && res.status !== 'blocked') {
-      setActiveBookingCell({ station, date });
-      setBulkBookingCells([]);
-      setIsBookingModalOpen(true);
-      return;
-    }
-
+    // Occupied → info modal (read-only users see details but no cancel button)
     setInfoModal(res);
   };
 
@@ -187,7 +210,7 @@ export default function StationGrid({
   };
 
   const renderMonthView = () => {
-    const date = new Date(selectedDate);
+    const date = parseISO(selectedDate);
     const start = startOfMonth(date);
     const end = endOfMonth(date);
     const days = eachDayOfInterval({ start, end });
@@ -213,48 +236,75 @@ export default function StationGrid({
           </button>
         </div>
 
-        <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
+        <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-2xl overflow-visible">
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-            <div key={d} className="bg-slate-50 p-3 text-[10px] font-black uppercase text-slate-400 text-center">{d}</div>
+            <div key={d} className="bg-slate-50 p-3 text-[10px] font-black uppercase text-slate-400 text-center rounded-tl-2xl first:rounded-tl-2xl">{d}</div>
+          ))}
+          {Array.from({ length: start.getDay() === 0 ? 6 : start.getDay() - 1 }).map((_, i) => (
+            <div key={`blank-${i}`} className="bg-white min-h-[100px]" />
           ))}
           {days.map((day, i) => {
             const dayStr = format(day, 'yyyy-MM-dd');
             const stats = getDayStats(dayStr);
-            const isSelected = isSameDay(day, new Date(selectedDate));
-            
+            const isSelected = isSameDay(day, parseISO(selectedDate));
+            const dayReservations = reservations.filter(r =>
+              r.office === selectedOffice && r.date === dayStr &&
+              r.status !== 'cancelled' && r.status !== 'rejected'
+            ).slice(0, 4);
+
             return (
-              <button 
-                key={i} 
-                onClick={() => setSelectedDate(dayStr)}
-                className={cn(
-                  "min-h-[100px] bg-white p-2 transition-all text-left flex flex-col items-start",
-                  isSelected && "ring-2 ring-amber-500 ring-inset bg-amber-50/30"
-                )}
-              >
-                <span className={cn(
-                  "text-xs font-black mb-2",
-                  isSameDay(day, new Date()) ? "text-amber-600" : "text-slate-400"
-                )}>{format(day, 'd')}</span>
-                
-                <div className="flex flex-wrap gap-1">
-                  {stats.total === 0 ? (
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[8px] font-black uppercase">All</span>
-                  ) : (
-                    <>
-                      {stats.confirmed > 0 && <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white text-[8px] font-black">{stats.confirmed}</span>}
-                      {stats.pending > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-400 text-white text-[8px] font-black">{stats.pending}</span>}
-                      {stats.blocked > 0 && <span className="px-1.5 py-0.5 rounded bg-slate-400 text-white text-[8px] font-black">{stats.blocked}</span>}
-                    </>
+              <div key={i} className="relative group">
+                <button
+                  onClick={() => setSelectedDate(dayStr)}
+                  className={cn(
+                    "w-full min-h-[100px] bg-white p-2 transition-all text-left flex flex-col items-start",
+                    isSelected && "ring-2 ring-amber-500 ring-inset bg-amber-50/30"
                   )}
-                </div>
-              </button>
+                >
+                  <span className={cn(
+                    "text-xs font-black mb-2",
+                    isSameDay(day, new Date()) ? "text-amber-600" : "text-slate-400"
+                  )}>{format(day, 'd')}</span>
+
+                  <div className="flex flex-wrap gap-1">
+                    {stats.total === 0 ? (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[8px] font-black uppercase">All</span>
+                    ) : (
+                      <>
+                        {stats.confirmed > 0 && <span className="px-1.5 py-0.5 rounded bg-green-600 text-white text-[8px] font-black">{stats.confirmed}</span>}
+                        {stats.pending > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-400 text-white text-[8px] font-black">{stats.pending}</span>}
+                        {stats.blocked > 0 && <span className="px-1.5 py-0.5 rounded bg-slate-400 text-white text-[8px] font-black">{stats.blocked}</span>}
+                      </>
+                    )}
+                  </div>
+                </button>
+                {/* Hover tooltip for MTD cells */}
+                {stats.total > 0 && (
+                  <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-slate-900 text-white rounded-2xl p-3 space-y-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none shadow-2xl shadow-slate-900/40">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-white/50">{format(day, 'EEEE, MMM d')}</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {stats.confirmed > 0 && <span className="px-1.5 py-0.5 rounded-md bg-green-600 text-white text-[9px] font-black">{stats.confirmed} confirmed</span>}
+                      {stats.pending > 0 && <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-white text-[9px] font-black">{stats.pending} pending</span>}
+                      {stats.blocked > 0 && <span className="px-1.5 py-0.5 rounded-md bg-slate-500 text-white text-[9px] font-black">{stats.blocked} blocked</span>}
+                    </div>
+                    {dayReservations.map(r => (
+                      <div key={r.id} className="text-[9px] text-white/70 flex items-center gap-1.5">
+                        <span className="font-black text-white">Stn {String(r.station).padStart(2,'0')}</span>
+                        <span className="truncate">{r.lobOrDepartment}</span>
+                      </div>
+                    ))}
+                    {stats.total > 4 && <p className="text-[9px] text-white/40">+{stats.total - 4} more</p>}
+                    <div className="absolute bottom-[-6px] left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 rotate-45" />
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
         
         <div className="border-t border-slate-100 pt-8">
           <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 mb-6">
-            Stations for {format(new Date(selectedDate), 'EEEE, MMMM dd')}
+            Stations for {format(parseISO(selectedDate), 'EEEE, MMMM dd')}
           </h3>
           {renderDayList()}
         </div>
@@ -263,7 +313,7 @@ export default function StationGrid({
   };
 
   const renderWeekView = () => {
-    const date = new Date(selectedDate);
+    const date = parseISO(selectedDate);
     const start = startOfWeek(date, { weekStartsOn: 1 });
     const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
 
@@ -299,7 +349,7 @@ export default function StationGrid({
               {days.map(day => (
                 <th key={day.toString()} className={cn(
                   "py-2 px-1 text-[9px] font-black uppercase text-center border-b border-slate-100",
-                  isSameDay(day, new Date(selectedDate)) ? "text-amber-600 bg-amber-50/50" : "text-slate-400"
+                  isSameDay(day, parseISO(selectedDate)) ? "text-amber-600 bg-amber-50/50" : "text-slate-400"
                 )}>
                   {format(day, 'EEE')}<br/>{format(day, 'MMM d')}
                 </th>
@@ -323,20 +373,35 @@ export default function StationGrid({
 
                   return (
                     <td key={dayStr} className="py-1 px-0.5 border-b border-slate-100">
-                      <button
-                        onClick={(e) => handleStationClick(num, e, dayStr)}
-                        className={cn(
-                          "w-full rounded-md text-white transition-all min-h-[36px] flex flex-col items-center justify-center px-0.5",
-                          getStatusColor(status),
-                          isCellSelected(num, dayStr) && "ring-2 ring-blue-400 ring-offset-1 scale-90"
-                        )}
-                      >
-                        {reservation && (
-                          <span className="text-[7px] font-black uppercase leading-tight text-center truncate w-full px-0.5">
-                            {reservation.lobOrDepartment}
-                          </span>
-                        )}
-                      </button>
+                      <div className="relative group">
+                        <button
+                          onClick={(e) => handleStationClick(num, e, dayStr)}
+                          className={cn(
+                            "w-full rounded-md text-white transition-all min-h-[36px] flex flex-col items-center justify-center px-0.5",
+                            getStatusColor(status),
+                            isCellSelected(num, dayStr) && "ring-2 ring-blue-400 ring-offset-1 scale-90"
+                          )}
+                        >
+                          {reservation && (
+                            <span className="text-[7px] font-black uppercase leading-tight text-center truncate w-full px-0.5">
+                              {reservation.lobOrDepartment}
+                            </span>
+                          )}
+                        </button>
+                        {/* Hover tooltip for WTD cells */}
+                        <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-44 bg-slate-900 text-white rounded-xl p-2.5 space-y-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none shadow-2xl shadow-slate-900/40">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Stn {num.toString().padStart(2, '0')} · {dayStr}</p>
+                          {reservation ? (
+                            <>
+                              <p className="text-[10px] font-black text-white">{reservation.lobOrDepartment}</p>
+                              <p className="text-[9px] text-white/70">{reservation.start} – {reservation.end}</p>
+                              <p className="text-[9px] text-amber-300 capitalize">{status}</p>
+                            </>
+                          ) : (
+                            <p className="text-[9px] text-emerald-400 font-bold">Available</p>
+                          )}
+                        </div>
+                      </div>
                     </td>
                   );
                 })}
@@ -349,48 +414,101 @@ export default function StationGrid({
   };
 
   const renderDayList = () => {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {Array.from({ length: officeConfig.stations }, (_, i) => i + 1).map(num => {
-          const status = getStationStatus(num);
-          const isSelected = isCellSelected(num, selectedDate);
-          const reservation = reservations.find(r =>
-            r.office === selectedOffice &&
-            r.station === num &&
-            r.date === selectedDate &&
-            r.status !== 'rejected' &&
-            r.status !== 'cancelled'
-          );
+    const isAdminViewer = employee?.role === 'Admin' || employee?.role === 'Manager' || employee?.role === 'Assistant Manager';
+    const lcStationNums = getLCStations(selectedOffice);
+    const regularNums = Array.from({ length: officeConfig.stations }, (_, i) => i + 1)
+      .filter(n => !lcStationNums.includes(n));
 
-          return (
-            <button
-              key={num}
-              onClick={(e) => handleStationClick(num, e)}
-              className={cn(
-                "flex items-center gap-3 p-3 rounded-2xl text-white transition-all text-left",
-                getStatusColor(status),
-                isSelected && "ring-4 ring-blue-400 ring-offset-2 scale-[0.97]"
+    const StationCard = ({ num }: { num: number }) => {
+      const isLC = lcStationNums.includes(num);
+      const status = getStationStatus(num);
+      const isSelected = isCellSelected(num, selectedDate);
+      const reservation = reservations.find(r =>
+        r.office === selectedOffice &&
+        r.station === num &&
+        r.date === selectedDate &&
+        r.status !== 'rejected' &&
+        r.status !== 'cancelled'
+      );
+      return (
+        <div className="relative group">
+          <button
+            onClick={(e) => handleStationClick(num, e)}
+            className={cn(
+              "w-full flex items-center gap-3 p-3 rounded-2xl text-white transition-all text-left",
+              getStatusColor(status),
+              isSelected && "ring-4 ring-blue-400 ring-offset-2 scale-[0.97]"
+            )}
+          >
+            <span className="text-sm font-black w-8 shrink-0 opacity-90">
+              {num.toString().padStart(2, '0')}
+            </span>
+            <div className="min-w-0 flex-1">
+              {reservation ? (
+                <>
+                  <p className="text-xs font-black uppercase tracking-tight truncate leading-tight">{reservation.lobOrDepartment}</p>
+                  <p className="text-[10px] font-bold opacity-80 leading-tight">{reservation.start}–{reservation.end}</p>
+                </>
+              ) : isLC ? (
+                <p className="text-xs font-black uppercase opacity-80">LC Reserved</p>
+              ) : (
+                <p className="text-xs font-black uppercase opacity-60">Available</p>
               )}
-            >
-              <span className="text-sm font-black w-8 shrink-0 opacity-90">
-                {num.toString().padStart(2, '0')}
+            </div>
+            {isLC && !reservation && (
+              <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-white/30 shrink-0">LC</span>
+            )}
+            {reservation && (
+              <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-white/20 shrink-0">{status}</span>
+            )}
+          </button>
+          {/* Hover Detail Tooltip */}
+          {(reservation || isLC) && (
+            <div className="absolute z-20 bottom-full left-0 mb-2 w-56 bg-slate-900 text-white rounded-2xl p-3 space-y-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none shadow-2xl shadow-slate-900/40">
+              <p className="text-[9px] font-black uppercase tracking-widest text-white/50">
+                Station {num.toString().padStart(2, '0')}{isLC ? ' · LC TEAM' : ''}
+              </p>
+              {reservation ? (
+                <>
+                  <p className="text-xs font-black text-white">{reservation.lobOrDepartment}</p>
+                  <p className="text-[10px] text-white/70">{reservation.start} – {reservation.end}</p>
+                  {reservation.equipmentNeeds && (
+                    <p className="text-[9px] text-amber-300 font-bold">{reservation.equipmentNeeds}</p>
+                  )}
+                  {isAdminViewer && (
+                    <p className="text-[9px] text-white/50 font-mono">#{reservation.requestedBy}</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[10px] text-violet-300 font-bold">Reserved for Load Control Team</p>
+              )}
+              <div className="absolute bottom-[-6px] left-4 w-3 h-3 bg-slate-900 rotate-45" />
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {regularNums.map(num => <StationCard key={num} num={num} />)}
+        </div>
+
+        {lcStationNums.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-violet-100" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-violet-600 px-2 py-1 bg-violet-50 rounded-full border border-violet-100">
+                LC Team — Load Control ({lcStationNums.length} stations reserved)
               </span>
-              <div className="min-w-0 flex-1">
-                {reservation ? (
-                  <>
-                    <p className="text-xs font-black uppercase tracking-tight truncate leading-tight">{reservation.lobOrDepartment}</p>
-                    <p className="text-[10px] font-bold opacity-80 leading-tight">{reservation.start}–{reservation.end}</p>
-                  </>
-                ) : (
-                  <p className="text-xs font-black uppercase opacity-60">Available</p>
-                )}
-              </div>
-              {reservation && (
-                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-white/20 shrink-0">{status}</span>
-              )}
-            </button>
-          );
-        })}
+              <div className="h-px flex-1 bg-violet-100" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {lcStationNums.map(num => <StationCard key={num} num={num} />)}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -431,9 +549,28 @@ export default function StationGrid({
   };
 
   const renderAllView = () => {
+    const isAdminViewer = employee?.role === 'Admin' || employee?.role === 'Manager' || employee?.role === 'Assistant Manager';
     const officeReservations = reservations
       .filter(r => r.office === selectedOffice)
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => {
+        const va = String(a[sortCol] ?? '');
+        const vb = String(b[sortCol] ?? '');
+        return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+
+    const SortHeader = ({ col, label }: { col: typeof sortCol; label: string }) => (
+      <th
+        className="p-3 text-[10px] font-black uppercase text-slate-400 text-left border-b border-slate-100 cursor-pointer select-none hover:text-amber-600 transition-colors"
+        onClick={() => toggleSort(col)}
+      >
+        <span className="flex items-center gap-1">
+          {label}
+          {sortCol === col
+            ? sortDir === 'asc' ? <ChevronUp className="w-3 h-3 text-amber-500" /> : <ChevronDown className="w-3 h-3 text-amber-500" />
+            : <ChevronDown className="w-3 h-3 opacity-20" />}
+        </span>
+      </th>
+    );
 
     return (
       <div className="space-y-4">
@@ -444,11 +581,11 @@ export default function StationGrid({
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th className="p-3 text-[10px] font-black uppercase text-slate-400 text-left border-b border-slate-100">Date</th>
-                <th className="p-3 text-[10px] font-black uppercase text-slate-400 text-left border-b border-slate-100">Station</th>
-                <th className="p-3 text-[10px] font-black uppercase text-slate-400 text-left border-b border-slate-100">LOB/Dept</th>
-                <th className="p-3 text-[10px] font-black uppercase text-slate-400 text-left border-b border-slate-100">User</th>
-                <th className="p-3 text-[10px] font-black uppercase text-slate-400 text-left border-b border-slate-100">Status</th>
+                <SortHeader col="date" label="Date" />
+                <SortHeader col="station" label="Station" />
+                <SortHeader col="lobOrDepartment" label="LOB/Dept" />
+                {isAdminViewer && <SortHeader col="requestedBy" label="User" />}
+                <SortHeader col="status" label="Status" />
               </tr>
             </thead>
             <tbody>
@@ -457,7 +594,9 @@ export default function StationGrid({
                   <td className="p-3 text-[10px] font-bold text-slate-600 border-b border-slate-100">{res.date}</td>
                   <td className="p-3 text-[10px] font-black text-slate-900 border-b border-slate-100 uppercase">{res.station}</td>
                   <td className="p-3 text-[10px] font-black text-slate-900 border-b border-slate-100 uppercase">{res.lobOrDepartment}</td>
-                  <td className="p-3 text-[10px] font-bold text-slate-500 border-b border-slate-100">{res.requestedBy}</td>
+                  {isAdminViewer && (
+                    <td className="p-3 text-[10px] font-bold text-slate-500 border-b border-slate-100 font-mono">#{res.requestedBy}</td>
+                  )}
                   <td className="p-3 border-b border-slate-100">
                     <span className={cn(
                       "px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest text-white",
@@ -470,7 +609,7 @@ export default function StationGrid({
               ))}
               {officeReservations.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <td colSpan={isAdminViewer ? 5 : 4} className="p-12 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
                     No reservations found
                   </td>
                 </tr>
@@ -503,8 +642,8 @@ export default function StationGrid({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Book Selected — visible to everyone when 2+ cells selected */}
-          {selectedCells.length >= 2 && (
+          {/* Book Selected — hidden for read-only User role */}
+          {!isReadOnly && selectedCells.length >= 2 && (
             <button
               onClick={openBulkBooking}
               className="px-4 py-2 bg-gradient-to-br from-amber-500 to-red-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md shadow-amber-500/20 hover:scale-105 transition-all flex items-center gap-2"
@@ -548,10 +687,13 @@ export default function StationGrid({
 
       <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50">
         <div className="flex flex-wrap gap-4 mb-8">
-          <LegendItem color="bg-emerald-500" label="Available" />
-          <LegendItem color="bg-amber-400" label="Pending" />
-          <LegendItem color="bg-rose-500" label="Confirmed" />
-          <LegendItem color="bg-slate-400" label="Blocked" />
+          <LegendItem color="bg-blue-500"    label="Available" />
+          <LegendItem color="bg-amber-400"   label="Pending" />
+          <LegendItem color="bg-green-600"   label="Confirmed" />
+          <LegendItem color="bg-red-600"     label="Denied" />
+          <LegendItem color="bg-slate-400"   label="Blocked" />
+          <LegendItem color="bg-violet-600"  label="LC Reserved" />
+          <LegendItem color="bg-indigo-500"  label="Reallocated" />
         </div>
 
         {viewType === 'Daily' && (
@@ -605,12 +747,20 @@ export default function StationGrid({
 
       {/* Info Modal — shown when clicking another user's occupied station */}
       {infoModal && (() => {
-        const isITAdmin = employee?.role === 'Admin';
-        const isManager = employee?.role === 'Manager' || employee?.role === 'Assistant Manager';
-        const isBlocked = infoModal.status === 'blocked';
-        const canCancel = isITAdmin || isManager;
-        const canBlock  = isITAdmin && !isBlocked && typeof infoModal.station === 'number';
+        const isITAdmin  = employee?.role === 'Admin';
+        const isManager  = employee?.role === 'Manager' || employee?.role === 'Assistant Manager';
+        const isOwner    = infoModal.requestedBy === employee?.employeeId;
+        const isBlocked  = infoModal.status === 'blocked';
+        const canCancel  = (isITAdmin || isManager) && !isBlocked; // master cancel
+        const canBlock   = isITAdmin && !isBlocked && typeof infoModal.station === 'number';
         const canUnblock = isITAdmin && isBlocked;
+        const canSelfCancel = isOwner && !isBlocked && !canCancel && !isReadOnly &&
+          (infoModal.status === 'pending' || infoModal.status === 'confirmed');
+        // Privacy: mask employee IDs for non-admin viewers
+        const showFullId = isITAdmin || isManager;
+        const displayId  = showFullId
+          ? infoModal.requestedBy
+          : `Emp •••${String(infoModal.requestedBy).slice(-3)}`;
 
         const handleInfoCancel = async () => {
           await cancelReservation(infoModal.id);
@@ -640,7 +790,7 @@ export default function StationGrid({
                 <div>
                   <p className="text-white/60 text-[10px] font-black uppercase tracking-widest">Station {String(infoModal.station).padStart(2, '0')} — {infoModal.office}</p>
                   <h2 className="text-white text-lg font-black uppercase tracking-tight mt-0.5">
-                    {isBlocked ? 'Station Blocked' : 'Reservation Details'}
+                    {isBlocked ? 'Station Blocked' : isOwner ? 'My Reservation' : 'Reservation Details'}
                   </h2>
                 </div>
                 <button onClick={() => setInfoModal(null)} className="p-1.5 hover:bg-white/20 rounded-xl transition-all">
@@ -660,7 +810,7 @@ export default function StationGrid({
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><UserIcon className="w-3 h-3" />Requested By</span>
-                      <span className="text-xs font-semibold text-slate-700 text-right max-w-[55%] truncate">{infoModal.requestedBy}</span>
+                      <span className="text-xs font-semibold text-slate-700 text-right max-w-[55%] truncate">{displayId}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><Briefcase className="w-3 h-3" />LOB / Dept</span>
@@ -692,10 +842,22 @@ export default function StationGrid({
                     <Unlock className="w-3.5 h-3.5" /> Unblock Station
                   </button>
                 )}
-                {canCancel && !isBlocked && (
+                {(isITAdmin || isManager) && !isBlocked && (infoModal.status === 'confirmed' || infoModal.status === 'pending') && (
+                  <button onClick={() => { setInfoModal(null); setEditModal(infoModal); }}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-colors">
+                    Edit / Override
+                  </button>
+                )}
+                {canCancel && (
                   <button onClick={handleInfoCancel}
                     className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-colors">
-                    Cancel Reservation
+                    Master Cancel
+                  </button>
+                )}
+                {canSelfCancel && (
+                  <button onClick={handleInfoCancel}
+                    className="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-colors">
+                    Cancel My Reservation
                   </button>
                 )}
                 {canBlock && (
@@ -706,13 +868,18 @@ export default function StationGrid({
                 )}
                 <button onClick={() => setInfoModal(null)}
                   className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black uppercase tracking-widest rounded-xl transition-colors">
-                  Exit
+                  Close
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+
+      {/* Admin Edit/Override Modal */}
+      {editModal && (
+        <AdminEditModal reservation={editModal} onClose={() => setEditModal(null)} />
+      )}
 
       {/* Booking Modal */}
       {isBookingModalOpen && activeBookingCell && (

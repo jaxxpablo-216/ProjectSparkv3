@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { cn } from '../lib/utils';
-import { OFFICES, TIME_SLOTS, EquipmentSet } from '../types';
-import { format, addMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isPast } from 'date-fns';
+import { OFFICES, TIME_SLOTS, EquipmentSet, LOB_OPTIONS } from '../types';
+import { format, addMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isPast, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, FileText, Download, ExternalLink, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useReservations } from './ReservationProvider';
 import { useEmployee } from './UserProvider';
-import { calculateEndTime, checkOverlap } from '../lib/validation';
+import { calculateEndTime, checkOverlap, isWithin48Hours } from '../lib/validation';
 import { generateICS } from '../lib/calendar-generator';
 import { generateReservationPDF, getReservationFilename } from '../lib/pdf-generator';
 
@@ -39,20 +39,28 @@ export default function ReservationForm({
   }, [initialStation]);
 
   const [selectedTime, setSelectedTime]           = useState<string | null>(null);
-  const [lobOrDepartment, setLobOrDepartment]     = useState('');
+  const [lobSelection, setLobSelection]           = useState<string>('');
+  const [lobOther, setLobOther]                   = useState('');
   const [equipmentNeeds, setEquipmentNeeds]       = useState<EquipmentSet>('Set 1: Basic');
+
+  const lobOrDepartment = lobSelection === 'Other' ? lobOther : lobSelection;
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pdfReady, setPdfReady]         = useState<{ doc: any; filename: string } | null>(null);
 
   const handleOfficeChange = (office: 'Office #1' | 'Office #2') => {
+    if (office !== selectedOffice) {
+      setSelectedStation(null);
+    }
     setSelectedOffice(office);
-    setSelectedStation(null);
   };
+
+  const isPrivileged = employee?.role === 'Admin' || employee?.role === 'Manager' || employee?.role === 'Assistant Manager';
 
   const handleDateChange = (date: Date) => {
     if (isPast(date) && !isSameDay(date, new Date())) return;
     if (date > addMonths(new Date(), 3)) return;
+    if (!isPrivileged && isWithin48Hours(format(date, 'yyyy-MM-dd'))) return;
     setSelectedDate(format(date, 'yyyy-MM-dd'));
   };
 
@@ -61,6 +69,11 @@ export default function ReservationForm({
 
     if (!selectedStation || !selectedTime || !lobOrDepartment) {
       toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (!isPrivileged && isWithin48Hours(selectedDate)) {
+      toast.error('Reservations must be made at least 48 hours in advance.');
       return;
     }
 
@@ -128,7 +141,8 @@ export default function ReservationForm({
     // Reset form immediately after successful write
     setSelectedStation(null);
     setSelectedTime(null);
-    setLobOrDepartment('');
+    setLobSelection('');
+    setLobOther('');
     setEquipmentNeeds('Set 1: Basic');
     setIsSubmitting(false);
 
@@ -248,9 +262,10 @@ export default function ReservationForm({
             </div>
             <div className="grid grid-cols-7 gap-1">
               {days.map((day, i) => {
-                const isSelected = isSameDay(day, new Date(selectedDate));
+                const isSelected = isSameDay(day, parseISO(selectedDate));
                 const isToday    = isSameDay(day, new Date());
-                const isDisabled = (isPast(day) && !isToday) || day > addMonths(new Date(), 3);
+                const isDisabled = (isPast(day) && !isToday) || day > addMonths(new Date(), 3)
+                  || (!isPrivileged && isWithin48Hours(format(day, 'yyyy-MM-dd')));
                 return (
                   <button
                     key={i}
@@ -304,14 +319,27 @@ export default function ReservationForm({
         <div className="space-y-4 pt-4 border-t border-slate-100">
           <div className="space-y-1.5">
             <label className="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">LOB or Department</label>
-            <input
-              type="text"
+            <select
               required
-              placeholder="e.g. IT / Operations"
               className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:bg-white focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all outline-none text-sm font-semibold"
-              value={lobOrDepartment}
-              onChange={(e) => setLobOrDepartment(e.target.value)}
-            />
+              value={lobSelection}
+              onChange={(e) => { setLobSelection(e.target.value); setLobOther(''); }}
+            >
+              <option value="" disabled>Select LOB or Department…</option>
+              {LOB_OPTIONS.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+            {lobSelection === 'Other' && (
+              <input
+                type="text"
+                required
+                placeholder="Specify your department…"
+                className="w-full px-4 py-3 bg-slate-50 border-2 border-amber-200 rounded-2xl focus:bg-white focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all outline-none text-sm font-semibold mt-2"
+                value={lobOther}
+                onChange={(e) => setLobOther(e.target.value)}
+              />
+            )}
           </div>
 
           <div className="space-y-1.5">

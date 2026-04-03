@@ -1,7 +1,8 @@
 export type UserRole = 'User' | 'IT Admin' | 'Manager';
 
 // New role system for v3
-export type EmployeeRole = 'Supervisor' | 'Assistant Manager' | 'Manager' | 'Admin';
+// 'User' = general access, EMP# login only (no token required)
+export type EmployeeRole = 'User' | 'Supervisor' | 'Assistant Manager' | 'Manager' | 'Admin';
 
 export interface Employee {
   id: string; // Firestore doc ID
@@ -72,3 +73,49 @@ export const OFFICES: OfficeConfig[] = [
 export const TIME_SLOTS = [
   '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00'
 ];
+
+/**
+ * LC (Load Control) Team stations — always reserved for LC, not bookable by regular users.
+ *
+ * Phase 1 (before May 1, 2026): 5 stations in Office #1 (stations 11–15)
+ * Phase 2 (from May 1, 2026):   7 stations in Office #2 (stations 24–30)
+ *
+ * LC stations are VISIBLE on the grid but cannot be booked by Supervisors.
+ * Admin / Manager can book them on behalf of the LC team.
+ */
+const LC_PHASE_DATE = new Date('2026-05-01');
+
+export function getLCStations(office: 'Office #1' | 'Office #2'): number[] {
+  const now = new Date();
+  const isPhase2 = now >= LC_PHASE_DATE;
+  if (office === 'Office #1') return isPhase2 ? [] : [11, 12, 13, 14, 15];
+  if (office === 'Office #2') return isPhase2 ? [24, 25, 26, 27, 28, 29, 30] : [];
+  return [];
+}
+
+export function isLCStation(station: number | string, office: 'Office #1' | 'Office #2'): boolean {
+  if (typeof station !== 'number') return false;
+  return getLCStations(office).includes(station);
+}
+
+export const LOB_OPTIONS = [
+  'IT / Technology',
+  'Operations',
+  'Finance',
+  'Human Resources',
+  'Customer Service',
+  'Sales & Marketing',
+  'Quality Assurance',
+  'Training & Development',
+  'Compliance & Risk',
+  'Executive / Management',
+  'Other',
+] as const;
+
+export interface CriticalNotice {
+  active: boolean;
+  message: string;
+  type: 'info' | 'warning' | 'critical';
+  setBy?: string;
+  setAt?: string;
+}

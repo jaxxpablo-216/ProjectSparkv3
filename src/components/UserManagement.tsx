@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { UserPlus, RefreshCw, Copy, Check, X, UserX } from 'lucide-react';
 import type { Employee, EmployeeRole } from '../types';
 
-const ROLES: EmployeeRole[] = ['Supervisor', 'Assistant Manager', 'Manager', 'Admin'];
+const ROLES: EmployeeRole[] = ['User', 'Supervisor', 'Assistant Manager', 'Manager', 'Admin'];
 
 export default function UserManagement() {
   const { employee: currentUser } = useEmployee();
@@ -186,10 +186,11 @@ export default function UserManagement() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                        emp.role === 'Admin' ? 'bg-red-50 text-red-600' :
-                        emp.role === 'Manager' ? 'bg-purple-50 text-purple-600' :
+                        emp.role === 'Admin'             ? 'bg-red-50 text-red-600' :
+                        emp.role === 'Manager'           ? 'bg-purple-50 text-purple-600' :
                         emp.role === 'Assistant Manager' ? 'bg-blue-50 text-blue-600' :
-                        'bg-amber-50 text-amber-600'
+                        emp.role === 'User'              ? 'bg-teal-50 text-teal-600' :
+                                                           'bg-amber-50 text-amber-600'
                       }`}>{emp.role}</span>
                     </td>
                     <td className="px-4 py-3">
@@ -210,6 +211,8 @@ export default function UserManagement() {
                           </div>
                         ) : emp.token && !valid ? (
                           <span className="text-[10px] text-red-500 font-bold">Expired</span>
+                        ) : emp.role === 'User' ? (
+                          <span className="text-[10px] text-teal-600 font-bold bg-teal-50 px-2 py-0.5 rounded-lg">Staff Access — EMP# only</span>
                         ) : (
                           <span className="text-[10px] text-slate-300 italic">No token</span>
                         )}
@@ -218,7 +221,7 @@ export default function UserManagement() {
                     {isAdmin && (
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {emp.isActive && (
+                          {emp.isActive && emp.role !== 'User' && (
                             <button
                               onClick={() => handleIssueToken(emp)}
                               disabled={issuing === emp.id}
@@ -329,10 +332,12 @@ export default function UserManagement() {
                       onClick={() => setForm(f => ({ ...f, role: r }))}
                       className={`py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl border-2 transition-all ${
                         form.role === r
-                          ? 'bg-amber-50 border-amber-500 text-amber-600'
+                          ? r === 'User'
+                            ? 'bg-teal-50 border-teal-500 text-teal-600'
+                            : 'bg-amber-50 border-amber-500 text-amber-600'
                           : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-200'
                       }`}
-                    >{r}</button>
+                    >{r === 'User' ? 'User (Staff)' : r}</button>
                   ))}
                 </div>
               </div>

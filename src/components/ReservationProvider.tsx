@@ -6,11 +6,14 @@ import { handleFirestoreError, OperationType } from '../lib/firebase-utils';
 import { useEmployee } from './UserProvider';
 import { toast } from 'sonner';
 
+export type ReservationEditFields = Partial<Pick<Reservation, 'requestedBy' | 'lobOrDepartment' | 'date' | 'start' | 'end' | 'equipmentNeeds'>>;
+
 interface ReservationContextType {
   reservations: Reservation[];
   loading: boolean;
   createReservation: (data: Omit<Reservation, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   updateReservationStatus: (id: string, status: ReservationStatus, reason?: string, approver?: string) => Promise<void>;
+  updateReservation: (id: string, fields: ReservationEditFields, actorId?: string) => Promise<void>;
   cancelReservation: (id: string) => Promise<void>;
   blockStation: (office: string, station: number, date: string) => Promise<void>;
 }
@@ -20,6 +23,7 @@ const ReservationContext = createContext<ReservationContextType>({
   loading: true,
   createReservation: async () => {},
   updateReservationStatus: async () => {},
+  updateReservation: async () => {},
   cancelReservation: async () => {},
   blockStation: async () => {}
 });
@@ -96,6 +100,26 @@ export const ReservationProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   };
 
+  const updateReservation = async (id: string, fields: ReservationEditFields, actorId?: string) => {
+    try {
+      const updateData: Record<string, unknown> = { ...fields };
+      if (actorId) {
+        updateData.lastEditedBy = actorId;
+        updateData.lastEditedAt = Timestamp.now();
+      }
+      // Recalculate end time if start changed
+      if (fields.start) {
+        const [h, m] = fields.start.split(':').map(Number);
+        const endH = (h + 9).toString().padStart(2, '0');
+        updateData.end = `${endH}:${m.toString().padStart(2, '0')}`;
+      }
+      await updateDoc(doc(db, 'reservations', id), updateData);
+      toast.success('Reservation updated');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `reservations/${id}`);
+    }
+  };
+
   const cancelReservation = async (id: string) => {
     try {
       await updateDoc(doc(db, 'reservations', id), {
@@ -131,7 +155,7 @@ export const ReservationProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   return (
-    <ReservationContext.Provider value={{ reservations, loading, createReservation, updateReservationStatus, cancelReservation, blockStation }}>
+    <ReservationContext.Provider value={{ reservations, loading, createReservation, updateReservationStatus, updateReservation, cancelReservation, blockStation }}>
       {children}
     </ReservationContext.Provider>
   );

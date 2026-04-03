@@ -31,6 +31,10 @@ export default function HelpModal({ isOpen, onClose, role }: HelpModalProps) {
             </h3>
             <ul className="space-y-3">
               <li className="flex gap-3 text-sm text-slate-600">
+                <div className="w-5 h-5 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5">!</div>
+                <p><span className="font-black text-red-600">Reservations must be made at least 48 hours in advance.</span> Same-day and next-day bookings are not permitted.</p>
+              </li>
+              <li className="flex gap-3 text-sm text-slate-600">
                 <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-black shrink-0">1</div>
                 <p>Click on any <span className="font-black text-emerald-600">GREEN</span> station to start a new reservation.</p>
               </li>
@@ -40,7 +44,7 @@ export default function HelpModal({ isOpen, onClose, role }: HelpModalProps) {
               </li>
               <li className="flex gap-3 text-sm text-slate-600">
                 <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-black shrink-0">3</div>
-                <p>Fill in your LOB or Department, Supervisor, and Manager emails in the booking form.</p>
+                <p>Fill in your LOB or Department in the booking form.</p>
               </li>
               <li className="flex gap-3 text-sm text-slate-600">
                 <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-black shrink-0">4</div>
@@ -76,13 +80,15 @@ export default function HelpModal({ isOpen, onClose, role }: HelpModalProps) {
           )}
 
           <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">Color Legend</h4>
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">Color Legend (RAG Standard)</h4>
             <div className="grid grid-cols-2 gap-4">
-              <LegendItem color="bg-emerald-500" label="Available" />
-              <LegendItem color="bg-amber-400" label="Requested" />
-              <LegendItem color="bg-rose-500" label="Booked" />
-              <LegendItem color="bg-slate-400" label="Unavailable" />
-              <LegendItem color="bg-blue-500" label="Reallocated" />
+              <LegendItem color="bg-blue-500"   label="Available" />
+              <LegendItem color="bg-amber-400"  label="Pending" />
+              <LegendItem color="bg-green-600"  label="Confirmed" />
+              <LegendItem color="bg-red-600"    label="Denied" />
+              <LegendItem color="bg-slate-400"  label="Blocked" />
+              <LegendItem color="bg-violet-600" label="LC Reserved" />
+              <LegendItem color="bg-indigo-500" label="Reallocated" />
             </div>
           </div>
         </div>

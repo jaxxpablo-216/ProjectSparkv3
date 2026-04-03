@@ -10,7 +10,7 @@ export default function Profile() {
   if (!employee) return null;
 
   const days = daysRemaining(employee.tokenExpiresAt);
-  const badgeClass = tokenBadgeClass(days);
+  const badgeClass = tokenBadgeClass(employee.tokenExpiresAt);
   const valid = isTokenValid(employee.tokenExpiresAt);
 
   return (

@@ -1,4 +1,12 @@
-import { addHours, isPast, addMonths, isSameDay } from 'date-fns';
+import { isPast, addMonths, isSameDay, parseISO, addHours, startOfDay } from 'date-fns';
+
+// Minimum advance booking: 48 hours from now
+// Privileged roles (Admin/Manager/Asst Manager) are exempt.
+export function isWithin48Hours(date: string): boolean {
+  const d = parseISO(date);
+  const cutoff = startOfDay(addHours(new Date(), 48));
+  return d < cutoff;
+}
 
 export function validateTimeRange(start: string) {
   const [h, m] = start.split(':').map(Number);
@@ -13,7 +21,7 @@ export function calculateEndTime(start: string) {
 }
 
 export function validateDateRange(date: string) {
-  const d = new Date(date);
+  const d = parseISO(date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   

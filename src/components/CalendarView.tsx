@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { cn } from '../lib/utils';
 import { OFFICES, Reservation } from '../types';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, startOfWeek, addDays, addMonths, addWeeks, subMonths, subWeeks } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, startOfWeek, addDays, addMonths, addWeeks, subMonths, subWeeks, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Search as SearchIcon } from 'lucide-react';
 import { useReservations } from './ReservationProvider';
 import { useEmployee } from './UserProvider';
@@ -21,7 +21,7 @@ export default function CalendarView({
 }: CalendarViewProps) {
   const { reservations, cancelReservation } = useReservations();
   const { employee } = useEmployee();
-  const [currentDate, setCurrentDate] = useState(new Date(selectedDate));
+  const [currentDate, setCurrentDate] = useState(parseISO(selectedDate));
 
   const filteredReservations = useMemo(() => {
     return reservations.filter(res => {
@@ -44,16 +44,21 @@ export default function CalendarView({
     const start = startOfMonth(currentDate);
     const end = endOfMonth(currentDate);
     const days = eachDayOfInterval({ start, end });
+    // Leading blank cells so the 1st aligns with the correct Mon–Sun column
+    const leadingBlanks = (start.getDay() === 0 ? 6 : start.getDay() - 1);
 
     return (
       <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
           <div key={d} className="bg-slate-50 p-3 text-[10px] font-black uppercase text-slate-400 text-center">{d}</div>
         ))}
+        {Array.from({ length: leadingBlanks }).map((_, i) => (
+          <div key={`blank-${i}`} className="bg-white min-h-[100px]" />
+        ))}
         {days.map((day, i) => {
           const dayStr = format(day, 'yyyy-MM-dd');
           const dayRes = filteredReservations.filter(r => r.date === dayStr);
-          const isSelected = isSameDay(day, new Date(selectedDate));
+          const isSelected = isSameDay(day, parseISO(selectedDate));
           
           return (
             <div key={i} className={cn(
@@ -63,7 +68,7 @@ export default function CalendarView({
               <div className="flex justify-between items-start mb-2">
                 <span className={cn(
                   "text-xs font-black",
-                  isSameDay(day, new Date()) ? "text-amber-600" : "text-slate-400"
+                  isSameDay(day, new Date()) ? 'text-amber-600' : 'text-slate-400'
                 )}>{format(day, 'd')}</span>
               </div>
               <div className="space-y-1">

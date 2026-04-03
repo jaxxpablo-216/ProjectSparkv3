@@ -7,8 +7,9 @@ import RejectionModal from '../components/RejectionModal';
 import { useEmployee } from '../components/UserProvider';
 import { useReservations } from '../components/ReservationProvider';
 import { cn } from '../lib/utils';
-import { HelpCircle, CheckCircle2, AlertCircle, Check, X, Clock, Loader2 } from 'lucide-react';
+import { HelpCircle, CheckCircle2, AlertCircle, Check, X, Clock, Loader2, CalendarDays, MapPin, Zap } from 'lucide-react';
 import { toast } from 'sonner';
+import GeneralOverview from '../components/GeneralOverview';
 
 export default function Dashboard() {
   const { searchQuery, viewMode } = useOutletContext<{ searchQuery: string, viewMode: 'User' | 'Admin' }>();
@@ -24,6 +25,14 @@ export default function Dashboard() {
   const isAdmin = employee?.role === 'Admin' || employee?.role === 'Manager' || employee?.role === 'Assistant Manager';
 
   const pendingAll = reservations.filter(r => r.status === 'pending' && r.type === 'booking');
+
+  // My Bookings — current user's upcoming and recent reservations
+  const today = new Date().toISOString().split('T')[0];
+  const myBookings = reservations
+    .filter(r => r.requestedBy === employee?.employeeId && r.type === 'booking')
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const myUpcoming = myBookings.filter(r => r.date >= today && r.status !== 'cancelled' && r.status !== 'rejected');
+  const myRecent   = myBookings.filter(r => r.date < today).slice(0, 5);
 
   const handleApprove = async (id: string) => {
     setActionLoading(id);
@@ -52,6 +61,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 pb-12">
+      {/* General Dashboard — visible to all roles */}
+      <GeneralOverview />
+
       {/* Header with Help Button */}
       <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
         <div>
@@ -64,6 +76,78 @@ export default function Dashboard() {
         >
           <HelpCircle className="w-4 h-4" /> How to use
         </button>
+      </div>
+
+      {/* My Bookings — personalized view for all users */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center">
+            <Zap className="w-4 h-4 text-white fill-current" />
+          </div>
+          <span className="font-black uppercase tracking-widest text-sm text-slate-900">My Bookings</span>
+          <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-slate-400">
+            {employee?.firstName} {employee?.lastName} · #{employee?.employeeId}
+          </span>
+        </div>
+        <div className="p-6 space-y-6">
+          {/* Upcoming */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-3 flex items-center gap-1.5">
+              <CalendarDays className="w-3.5 h-3.5" /> Upcoming ({myUpcoming.length})
+            </p>
+            {myUpcoming.length === 0 ? (
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No upcoming reservations</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {myUpcoming.map(res => (
+                  <div key={res.id} className="p-3 rounded-2xl border border-slate-100 bg-slate-50 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-900">
+                        Stn {String(res.station).padStart(2, '0')} · {res.office}
+                      </span>
+                      <span className={cn(
+                        'text-[8px] font-black uppercase px-2 py-0.5 rounded-full',
+                        res.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                        res.status === 'pending'   ? 'bg-amber-100 text-amber-700' :
+                        'bg-slate-100 text-slate-500'
+                      )}>{res.status}</span>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />{res.lobOrDepartment}
+                    </p>
+                    <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />{res.date} · {res.start}–{res.end}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Recent (past) */}
+          {myRecent.length > 0 && (
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Recent History</p>
+              <div className="space-y-2">
+                {myRecent.map(res => (
+                  <div key={res.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-black text-slate-400 font-mono w-20 shrink-0">{res.date}</span>
+                      <span className="text-[10px] font-bold text-slate-600 uppercase">{res.lobOrDepartment}</span>
+                      <span className="text-[10px] text-slate-400">Stn {String(res.station).padStart(2, '0')}</span>
+                    </div>
+                    <span className={cn(
+                      'text-[8px] font-black uppercase px-2 py-0.5 rounded-full',
+                      res.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                      res.status === 'rejected'  ? 'bg-red-100 text-red-600' :
+                      res.status === 'cancelled' ? 'bg-slate-100 text-slate-400' :
+                      'bg-slate-100 text-slate-500'
+                    )}>{res.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Stats Section */}
